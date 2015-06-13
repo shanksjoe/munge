@@ -1,0 +1,70 @@
+diff -ur munge-0.5.9-orig/src/munged/gids.c munge-0.5.9-issue2/src/munged/gids.c
+--- munge-0.5.9-orig/src/munged/gids.c	2010-03-02 18:14:07.000000000 -0500
++++ munge-0.5.9-issue2/src/munged/gids.c	2010-11-03 17:44:01.000000000 -0400
+@@ -361,9 +361,9 @@
+     hash_t          uid_hash = NULL;
+     struct timeval  t_start;
+     struct timeval  t_stop;
+-    int             do_group_db_close = 0;
+-    struct group   *gr_ptr;
+-    char          **pp;
++    int             i,do_group_db_close = 0;
++    struct group   grp,*gr_ptr;
++    char          **pp,grp_buf[GIDS_GROUP_BUFFER];
+     uid_t           uid;
+     int             n_users;
+     double          n_seconds;
+@@ -389,21 +389,14 @@
+     setgrent ();
+     do_group_db_close = 1;
+ 
+-    for (;;) {
+-        errno = 0;
+-        if (!(gr_ptr = getgrent ())) {
+-            /*
+-             *  In addition to returning NULL when there are no more entries,
+-             *    glibc-2.2.5 sets errno to ENOENT.  Deal with it.
+-             */
+-            if ((errno == 0) || (errno == ENOENT))
+-                break;
+-            if (errno == EINTR)
+-                continue;
+-            log_msg (LOG_ERR, "Unable to query group info: %s",
+-                    strerror (errno));
+-            goto err;
+-        }
++    while(1) {
++        i = getgrent_r(&grp, grp_buf, GIDS_GROUP_BUFFER, &gr_ptr);
++	if (i == ERANGE) {
++	   log_msg(LOG_ERR, "getgrent group buffer not big enough");
++	   goto err;
++	}
++        if (i)
++            break;
+         for (pp = gr_ptr->gr_mem; pp && *pp; pp++) {
+             if ((_gids_user_to_uid (uid_hash, *pp, &uid)) >= 0) {
+                 if (_gids_hash_add (gid_hash, uid, gr_ptr->gr_gid) < 0) {
+@@ -411,8 +404,11 @@
+                 }
+             }
+         }
++
+     }
++
+     endgrent ();
++	do_group_db_close = 0;
+ 
+     if (gettimeofday (&t_stop, NULL) < 0) {
+         log_msg (LOG_ERR, "Unable to query current time");
+diff -ur munge-0.5.9-orig/src/munged/gids.h munge-0.5.9-issue2/src/munged/gids.h
+--- munge-0.5.9-orig/src/munged/gids.h	2010-03-02 18:14:07.000000000 -0500
++++ munge-0.5.9-issue2/src/munged/gids.h	2010-11-03 17:39:37.000000000 -0400
+@@ -40,6 +40,8 @@
+ #define GIDS_HASH_SIZE          2053
+ #define UIDS_HASH_SIZE          4099
+ 
++#define GIDS_GROUP_BUFFER	32768
++
+ 
+ /*****************************************************************************
+  *  Data Types
