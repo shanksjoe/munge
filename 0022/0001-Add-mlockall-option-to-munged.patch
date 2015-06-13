@@ -1,0 +1,130 @@
+From d20f3fa9be8ff6ec152dcce33132b411c7c3077a Mon Sep 17 00:00:00 2001
+From: Michael Fenn <fennm@deshawresearch.com>
+Date: Mon, 22 Apr 2013 12:10:34 -0400
+Subject: [PATCH] Add mlockall option to munged
+
+This patch adds a command line option (-M, --mlockall) to munged
+that, when activated, causes it to call
+
+   mlockall(MCL_CURRENT|MCL_FUTURE)
+
+during the init process.  Locking memory is beneficial during
+situations where the machine is under high memory and disk presure
+because it helps munged stay responsive.
+---
+ src/munged/conf.c      | 10 +++++++++-
+ src/munged/conf.h      |  1 +
+ src/munged/munged.8.in |  4 ++++
+ src/munged/munged.c    | 13 +++++++++++++
+ 4 files changed, 27 insertions(+), 1 deletion(-)
+
+diff --git a/src/munged/conf.c b/src/munged/conf.c
+index f38b04c..ad3e31a 100644
+--- a/src/munged/conf.c
++++ b/src/munged/conf.c
+@@ -59,7 +59,7 @@
+  *  Command-Line Options
+  *****************************************************************************/
+ 
+-const char * const short_opts = ":hLVfFS:";
++const char * const short_opts = ":hLVfFS:M";
+ 
+ #include <getopt.h>
+ struct option long_opts[] = {
+@@ -69,6 +69,7 @@ struct option long_opts[] = {
+     { "force",             no_argument,       NULL, 'f' },
+     { "foreground",        no_argument,       NULL, 'F' },
+     { "socket",            required_argument, NULL, 'S' },
++    { "mlockall",          no_argument,       NULL, 'M' },
+     { "advice",            no_argument,       NULL, 'A' },
+     { "key-file",          required_argument, NULL, '0' },
+     { "num-threads",       required_argument, NULL, '1' },
+@@ -112,6 +113,7 @@ create_conf (void)
+     conf->got_clock_skew = 1;
+     conf->got_force = 0;
+     conf->got_foreground = 0;
++    conf->got_mlockall = 0;
+     conf->got_group_stat = !! MUNGE_GROUP_STAT_FLAG;
+     conf->got_socket_retry = !! MUNGE_SOCKET_RETRY_FLAG;
+     conf->got_root_auth = !! MUNGE_AUTH_ROOT_ALLOW_FLAG;
+@@ -278,6 +280,9 @@ parse_cmdline (conf_t conf, int argc, char **argv)
+                     log_errno (EMUNGE_NO_MEMORY, LOG_ERR,
+                         "Failed to copy socket name string");
+                 break;
++            case 'M':
++                conf->got_mlockall = 1;
++                break;
+             case 'A':
+                 printf ("Don't Panic!\n");
+                 exit (42);
+@@ -418,6 +423,9 @@ display_help (char *prog)
+     printf ("  %*s %s\n", w, "-F, --foreground",
+             "Run process in the foreground (do not fork)");
+ 
++    printf ("  %*s %s\n", w, "-M, --mlockall",
++            "Lock all pages in memory upon startup");
++
+     printf ("  %*s %s [%s]\n", w, "-S, --socket=PATH",
+             "Specify local socket", MUNGE_SOCKET_NAME);
+ 
+diff --git a/src/munged/conf.h b/src/munged/conf.h
+index fdbd686..379145b 100644
+--- a/src/munged/conf.h
++++ b/src/munged/conf.h
+@@ -48,6 +48,7 @@ struct conf {
+     unsigned        got_group_stat:1;   /* flag for gids stat'ing /etc/group */
+     unsigned        got_socket_retry:1; /* flag for allowing decode retries  */
+     unsigned        got_root_auth:1;    /* flag if root can decode any cred  */
++    unsigned        got_mlockall:1;     /* flag if munged should lock mem    */
+     munge_cipher_t  def_cipher;         /* default cipher type               */
+     munge_zip_t     def_zip;            /* default compression type          */
+     munge_mac_t     def_mac;            /* default message auth code type    */
+diff --git a/src/munged/munged.8.in b/src/munged/munged.8.in
+index c1ef4c7..41ec54d 100644
+--- a/src/munged/munged.8.in
++++ b/src/munged/munged.8.in
+@@ -76,6 +76,10 @@ file/directory permissions.
+ .BI "-F, --foreground"
+ Run the daemon in the foreground.
+ .TP
++.BI "-M, --mlockall"
++Lock all pages into memory upon daemon startup.  This can help keep munged
++responsive when the system is under heavy memory pressure.
++.TP
+ .BI "-S, --socket " path
+ Specify the local domain socket for communicating with clients.
+ .TP
+diff --git a/src/munged/munged.c b/src/munged/munged.c
+index 69dc9d6..fd9f657 100644
+--- a/src/munged/munged.c
++++ b/src/munged/munged.c
+@@ -37,6 +37,7 @@
+ #include <signal.h>
+ #include <stdlib.h>
+ #include <string.h>
++#include <sys/mman.h>
+ #include <sys/time.h>                   /* include before resource.h for bsd */
+ #include <sys/resource.h>
+ #include <sys/socket.h>
+@@ -118,6 +119,18 @@ main (int argc, char *argv[])
+     lookup_ip_addr (conf);
+     write_pidfile (conf->pidfile_name, conf->got_force);
+ 
++    if (conf->got_mlockall){
++#ifdef _POSIX_MEMLOCK
++        if (mlockall(MCL_CURRENT|MCL_FUTURE) < 0) {
++            log_msg (LOG_ERR, "%s (pid %d) could not lock pages",
++                     META_ALIAS, (int) getpid ());
++        }
++#else
++        log_msg (LOG_ERR, "%s (pid %d) does not appear to have mlockall()",
++                     META_ALIAS, (int) getpid ());
++#endif /* _POSIX_MEMLOCK */
++    }
++
+     crypto_init ();
+     if (random_init (conf->seed_name) < 0) {
+         if (conf->seed_name) {
+-- 
+1.8.1
+
