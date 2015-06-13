@@ -1,0 +1,5 @@
+/usr/bin/munge         --   gen_context(system_u:object_r:munge_exec_t,s0)
+/usr/bin/remunge       --   gen_context(system_u:object_r:munge_exec_t,s0)
+/usr/bin/unmunge       --   gen_context(system_u:object_r:munge_exec_t,s0)
+/usr/sbin/munged       --   gen_context(system_u:object_r:munge_exec_t,s0)
+/var/run/munge(/.*)?        gen_context(system_u:object_r:munge_var_run_t,s0)

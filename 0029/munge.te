@@ -1,0 +1,38 @@
+
+policy_module(munge,0.1.7)
+
+gen_require(`
+	type unconfined_t, initrc_t, user_t, user_devpts_t, var_log_t, var_lib_t;
+#	class process setrlimit;
+#	class chr_file { read write };
+')
+
+type munge_t;
+type munge_exec_t;
+init_daemon_domain(munge_t,munge_exec_t)
+domain_obj_id_change_exemption(munge_t)
+application_domain(munge_t,munge_exec_t)
+sysnet_read_config(munge_t)
+logging_log_file(var_log_t)
+dev_read_rand(munge_t)
+
+type munge_var_run_t;
+files_type(munge_var_run_t)
+
+allow munge_t self:process { signal setrlimit };
+allow munge_t self:udp_socket { ioctl create connect };
+miscfiles_read_localization(munge_t)
+
+# /var/lib/munge/munge.seed
+manage_files_pattern(munge_t,var_lib_t,var_lib_t)
+
+# /var/run/munge
+rw_dirs_pattern(munge_t,munge_var_run_t,munge_var_run_t)
+manage_files_pattern(munge_t,munge_var_run_t,munge_var_run_t)
+manage_sock_files_pattern(munge_t,munge_var_run_t,munge_var_run_t)
+
+#munge_domtrans(unconfined_t)
+role user_r types munge_t;
+munge_domtrans(user_t)
+
+
